@@ -23,12 +23,22 @@ function sanitizeFilename(filename) {
  * @param {string} filepath - Zielpath
  * @param {string} description - Beschreibung für Logging
  * @param {puppeteer.Page} page - Optional: Puppeteer Page um Cookies zu holen
+ * @param {string} duplicateHandling - 'overwrite' oder 'skip'
  */
-export async function downloadPdf(url, filepath, description = 'PDF', page = null) {
+export async function downloadPdf(url, filepath, description = 'PDF', page = null, duplicateHandling = 'overwrite') {
   try {
     if (!url) {
       console.warn(`⚠️ Keine URL für ${description} vorhanden`);
       return false;
+    }
+
+    // Prüfe ob Datei bereits existiert
+    const fileExists = await fs.pathExists(filepath);
+    if (fileExists) {
+      if (duplicateHandling === 'skip') {
+        console.log(`⏭️ Übersprungen (existiert bereits): ${description}`);
+        return true;
+      }
     }
 
     // Stelle sicher dass Verzeichnis existiert

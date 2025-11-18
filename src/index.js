@@ -39,6 +39,30 @@ function getInput(prompt) {
 }
 
 /**
+ * Prüfe ob Dateien bereits im Download-Verzeichnis existieren
+ * @param {Array} modules - Array von Modulen mit ihren Materialien
+ * @param {string} downloadDir - Basis-Download Verzeichnis
+ * @returns {Promise<number>} Anzahl der existierenden Dateien
+ */
+async function checkExistingFiles(modules, downloadDir) {
+  let count = 0;
+  
+  for (const module of modules) {
+    const moduleNameWithCode = module.code ? `${module.code} - ${module.title}` : module.title;
+    const moduleName = sanitizeFilename(moduleNameWithCode);
+    const moduleDir = path.join(downloadDir, moduleName);
+    
+    // Prüfe ob Modul-Verzeichnis existiert
+    if (await fs.pathExists(moduleDir)) {
+      const files = await fs.readdir(moduleDir);
+      count += files.filter(f => f.endsWith('.pdf')).length;
+    }
+  }
+  
+  return count;
+}
+
+/**
  * Hauptprogramm
  */
 async function main() {
@@ -80,20 +104,44 @@ async function main() {
       console.log(`  ${index + 1}. ${mod.title} ${mod.code ? `(${mod.code})` : ''}`);
     });
 
-    // Frage nach Download bestätigung
-    const downloadDir = process.env.DOWNLOAD_DIR || './downloads';
-    const confirm = await getInput(`\n📁 Downloads speichern in: ${path.resolve(downloadDir)}\nFortfahren? (ja/nein): `);
-    
-    if (confirm.toLowerCase() !== 'ja' && confirm.toLowerCase() !== 'yes' && confirm.toLowerCase() !== 'y') {
-      console.log('❌ Download abgebrochen');
-      return;
-    }
-
     // Stelle sicher dass Verzeichnis existiert
+    const downloadDir = process.env.DOWNLOAD_DIR || './downloads';
     await fs.ensureDir(downloadDir);
 
+    // Prüfe ob bereits Dateien existieren
+    const existingCount = await checkExistingFiles(modules, downloadDir);
+    
+    // Frage IMMER nach dem Modus
+    let duplicateHandling = 'overwrite'; // default
+    console.log(`\n⚙️ Download-Modus:`);
+    
+    if (existingCount > 0) {
+      console.log(`⚠️ ${existingCount} Datei(en) existieren bereits im Download-Verzeichnis.`);
+    }
+    
+    let validChoice = false;
+    while (!validChoice) {
+      const modePrompt = existingCount > 0 
+        ? 'Was möchtest du tun?\n  1. Überschreiben\n  2. Überspringen\nWahl (1 oder 2): '
+        : 'Wie sollen existierende Dateien behandelt werden?\n  1. Überschreiben (wenn später vorhanden)\n  2. Überspringen (wenn später vorhanden)\nWahl (1 oder 2): ';
+      
+      const modeChoice = await getInput(modePrompt);
+      
+      if (modeChoice.trim() === '1') {
+        duplicateHandling = 'overwrite';
+        console.log('📝 Modus: Dateien werden überschrieben\n');
+        validChoice = true;
+      } else if (modeChoice.trim() === '2') {
+        duplicateHandling = 'skip';
+        console.log('📝 Modus: Existierende Dateien werden übersprungen\n');
+        validChoice = true;
+      } else {
+        console.log('❌ Ungültige Eingabe. Bitte 1 oder 2 eingeben.\n');
+      }
+    }
+
     // Lade alle Materialien herunter
-    console.log('\n⏳ Dies kann einige Zeit dauern...\n');
+    console.log('⏳ Dies kann einige Zeit dauern...\n');
     
     // Für jedes Modul: Hole Lernmaterialien und speichere
     for (const module of modules) {
@@ -122,7 +170,7 @@ async function main() {
           if (material.pdfUrl) {
             const pdfPath = path.join(materialDir, `${materialName}.pdf`);
             console.log(`     URL: ${material.pdfUrl}`);
-            await downloadPdf(material.pdfUrl, pdfPath, `${moduleName}/${materialName}`, page);
+            await downloadPdf(material.pdfUrl, pdfPath, `${moduleName}/${materialName}`, page, duplicateHandling);
           }
           
           // Download Korrekturhinweise wenn vorhanden
@@ -144,7 +192,7 @@ async function main() {
               const fullUrl = correction.url.startsWith('http') 
                 ? correction.url 
                 : `https://www.euro-fh-campus.de${correction.url}`;
-              await downloadPdf(fullUrl, correctionPath, `${moduleName}/${materialName} (${filename})`, page);
+              await downloadPdf(fullUrl, correctionPath, `${moduleName}/${materialName} (${filename})`, page, duplicateHandling);
             }
           }
         }
