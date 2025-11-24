@@ -71,7 +71,7 @@ async function main() {
 
   try {
     console.log('╔═══════════════════════════════════╗');
-    console.log('║  Euro-FH Scraper v1.0.0          ║');
+    console.log('║  Euro-FH Scraper v1.0.0           ║');
     console.log('║  Automatisches Download-Tool      ║');
     console.log('╚═══════════════════════════════════╝\n');
 
