@@ -48,7 +48,10 @@ export async function getModules(page) {
           const codeElement = box.querySelector('.box.cols dfn');
           const moduleCode = codeElement ? codeElement.innerText.trim() : '';
           
+          // download only single module
+          // if (titleMatch && titleMatch.includes("Datenbanken")) {
           if (titleMatch) {
+
             moduleList.push({
               title: titleMatch,
               code: moduleCode,
