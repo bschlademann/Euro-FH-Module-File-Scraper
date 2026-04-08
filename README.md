@@ -1,92 +1,92 @@
 # Euro-FH Scraper
 
-Automatisches Download-Tool für Euro-FH Lernmaterialien. Lädt alle deine Module mit Lernheften und Korrekturhinweisen herunter.
+Automatic download tool for Euro-FH learning materials. Downloads all your modules with study guides and correction notes.
 
 ## Features
 
-- Automatische Authentifizierung auf der Euro-FH Plattform
-- Alle Module automatisch abrufen
-- Lernhefte pro Modul herunterladen
-- Korrekturhinweise speichern
-- Automatische Ordnerstruktur (Modul → Lernheft → PDFs)
-- Übersichtliche Zusammenfassung der Downloads
+- Automatic authentication on the Euro-FH platform
+- Automatically retrieve all modules
+- Download study guides per module
+- Save correction notes
+- Automatic folder structure (Module → Study Guide → PDFs)
+- Clear summary of downloads
 
-## Voraussetzungen
+## Requirements
 
-- Node.js 16+ installiert ([Download](https://nodejs.org))
-- Aktiver Euro-FH Account
+- Node.js 16+ installed ([Download](https://nodejs.org))
+- Active Euro-FH account
 
 ## Installation
 
-1. **Repository klonen:**
+1. **Clone repository:**
    ```bash
    cd "Euro-FH scraper"
    ```
 
-2. **Dependencies installieren:**
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-3. **.env Datei erstellen:**
+3. **Create .env file:**
    ```bash
    cp .env.example .env
    ```
 
-4. **Credentials in .env eintragen:**
+4. **Enter credentials in .env:**
    ```env
-   EURO_FH_EMAIL=deine-email@example.com
-   EURO_FH_PASSWORD=dein-passwort
+   EURO_FH_EMAIL=your-email@example.com
+   EURO_FH_PASSWORD=your-password
    ```
 
-## Ordnerstruktur
+## Folder Structure
 
-Die Downloads werden in folgende Struktur organisiert:
+Downloads are organized in the following structure:
 
 ```
 downloads/
-├── Modul 1/
-│   ├── Lernheft 1/
-│   │   ├── Lernheft 1.pdf
-│   │   └── Lernheft 1_Korrekturhinweise.pdf
-│   └── Lernheft 2/
-│       └── Lernheft 2.pdf
-└── Modul 2/
-    └── Lernheft 3/
-        └── Lernheft 3.pdf
+├── Module 1/
+│   ├── Study Guide 1/
+│   │   ├── Study Guide 1.pdf
+│   │   └── Study Guide 1_Correction Notes.pdf
+│   └── Study Guide 2/
+│       └── Study Guide 2.pdf
+└── Module 2/
+    └── Study Guide 3/
+        └── Study Guide 3.pdf
 ```
 
-## Verwendung
+## Usage
 
-### Normaler Start:
+### Normal startup:
 ```bash
 npm start
 ```
 
-### Entwicklungsmodus (mit Auto-Reload):
+### Development mode (with auto-reload):
 ```bash
 npm run dev
 ```
 
-Das Programm wird dich durch den Download-Prozess führen:
-1. Verbindung zur Euro-FH Plattform
-2. Abrufen aller verfügbaren Module
-3. Bestätigung vor Download
-4. Automatisches Herunterladen aller Materialien
-5. Zusammenfassung der Downloads
+The program will guide you through the download process:
+1. Connect to the Euro-FH platform
+2. Retrieve all available modules
+3. Confirm before download
+4. Automatically download all materials
+5. Summary of downloads
 
-## Konfiguration
+## Configuration
 
-Bearbeite die `.env` Datei für folgende Optionen:
+Edit the `.env` file for the following options:
 
-| Variable | Beschreibung | Standard |
+| Variable | Description | Default |
 |----------|-------------|----------|
-| `EURO_FH_EMAIL` | Deine Euro-FH E-Mail | - |
-| `EURO_FH_PASSWORD` | Dein Euro-FH Passwort | - |
-| `HEADLESS` | Browser im Headless-Modus starten | `true` |
-| `DOWNLOAD_DIR` | Verzeichnis für Downloads | `./downloads` |
-| `DOWNLOAD_TIMEOUT` | Timeout für Downloads (ms) | `30000` |
+| `EURO_FH_EMAIL` | Your Euro-FH email | - |
+| `EURO_FH_PASSWORD` | Your Euro-FH password | - |
+| `HEADLESS` | Start browser in headless mode | `true` |
+| `DOWNLOAD_DIR` | Directory for downloads | `./downloads` |
+| `DOWNLOAD_TIMEOUT` | Timeout for downloads (ms) | `30000` |
 
-## 📝 Lizenz
+## 📝 License
 
-ISC License - Dieses Projekt ist nur für persönliche Zwecke
+ISC License - This project is for personal use only
