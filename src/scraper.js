@@ -49,7 +49,6 @@ export async function getModules(page) {
           const moduleCode = codeElement ? codeElement.innerText.trim() : '';
           
           // download only single module
-          // if (titleMatch && titleMatch.includes("Datenbanken")) {
           if (titleMatch) {
 
             moduleList.push({
@@ -145,12 +144,12 @@ export async function getLearningMaterials(page, moduleId) {
     // Schritt 3: Für jedes Lernheft - klicke es und hole PDFs
     for (const heftId of hefteIds) {
       try {
-        // Klicke auf das Lernheft um die Downloads anzuzeigen
         console.log(`    ⏳ Verarbeite ${heftId}...`);
+
+        // Klicke auf das Lernheft um die Downloads anzuzeigen
         await page.evaluate((id) => {
           const element = document.getElementById(id);
           if (element) {
-            // Klicke auf den Titel um das Element zu expandieren
             const titleLink = element.querySelector('.cell.title');
             if (titleLink) {
               titleLink.click();
@@ -160,8 +159,21 @@ export async function getLearningMaterials(page, moduleId) {
           }
         }, heftId);
 
-        // Warte länger damit die Tab-Inhalte mit PDFs geladen werden
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Warte DYNAMISCH bis der PDF-Link im Editor-Container erscheint (max 10s)
+        const leid = heftId.replace('le_', '');
+        const editorSelector = `#assignment_content_${leid}`;
+        try {
+          await page.waitForFunction(
+            (sel) => {
+              const editor = document.querySelector(sel);
+              return editor && editor.querySelector('a.pdf[href*="/studium/index/pdf"]');
+            },
+            { timeout: 10000 },
+            editorSelector
+          );
+        } catch (e) {
+          // Timeout ist OK - manche Hefte haben keine PDFs (EF/H, Flashcards, Klausuren)
+        }
 
         // Extrahiere die PDF-Link für dieses Heft
         const heftMaterial = await page.evaluate((id, modId) => {
