@@ -4,8 +4,8 @@ import path from 'path';
 import dotenv from 'dotenv';
 import readline from 'readline';
 import { login, logout, isLoggedIn } from './auth.js';
-import { getModules, getLearningMaterials } from './scraper.js';
-import { downloadAllMaterials, downloadPdf, verifyDownloads } from './downloader.js';
+import { getModules, getLearningMaterials, collectHeftIds } from './scraper.js';
+import { downloadAllMaterials, downloadPdf, verifyDownloads, findMissingMaterials } from './downloader.js';
 
 dotenv.config();
 
@@ -16,7 +16,7 @@ dotenv.config();
  */
 function sanitizeFilename(filename) {
   return filename
-    .replace(/[<>:"|?*]/g, '')
+    .replace(/[<>:"|?*/\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -142,7 +142,10 @@ async function main() {
 
     // Lade alle Materialien herunter
     console.log('⏳ Dies kann einige Zeit dauern...\n');
-    
+
+    // Erwartete Studienhefte pro Modul (für den Abgleich nach dem Download)
+    const expectedByModule = {};
+
     // Für jedes Modul: Hole Lernmaterialien und speichere
     for (const module of modules) {
       // Erstelle Modulname mit Code: "MD ALGO - Algorithmen und Datenstrukturen"
@@ -153,7 +156,34 @@ async function main() {
       console.log(`\n📂 Modul: ${moduleName}`);
       
       try {
-        const materials = await getLearningMaterials(page, module.id);
+        // Pre-Scan: Hefte aus dem DOM lesen (schnell, öffnet das Modul NICHT)
+        const collected = await collectHeftIds(page, module.id);
+        expectedByModule[moduleName] = {
+          studienhefte: collected.studienhefte,
+          titles: collected.titles
+        };
+
+        // Festplatten-Check: welche Hefte sind bereits vollständig vorhanden?
+        let skipIds = null;
+        if (duplicateHandling === 'skip') {
+          const allTitles = Array.from(new Set(
+            Object.values(collected.titleById).filter(t => t)
+          ));
+          const missingTitles = await findMissingMaterials(moduleDir, allTitles);
+
+          skipIds = new Set(
+            Object.entries(collected.titleById)
+              .filter(([, title]) => title && !missingTitles.includes(title))
+              .map(([id]) => id)
+          );
+
+          if (skipIds.size > 0 && skipIds.size === collected.ids.length) {
+            console.log(`  ✓ Modul vollständig, überspringe (${collected.ids.length} Lernhefte vorhanden)`);
+            continue;
+          }
+        }
+
+        const { materials } = await getLearningMaterials(page, module.id, skipIds);
         
         for (const material of materials) {
           let materialName = sanitizeFilename(material.title);
@@ -202,7 +232,7 @@ async function main() {
     }
 
     // Zeige Zusammenfassung
-    await verifyDownloads(downloadDir);
+    await verifyDownloads(downloadDir, expectedByModule);
     
   } catch (error) {
     console.error('\n❌ FEHLER:', error.message);

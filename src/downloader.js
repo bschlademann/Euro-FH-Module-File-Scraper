@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 function sanitizeFilename(filename) {
   return filename
-    .replace(/[<>:"|?*]/g, '')
+    .replace(/[<>:"|?*/\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -158,7 +158,7 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
       const { getLearningMaterials } = await import('./scraper.js').catch(() => ({}));
       
       if (getLearningMaterials) {
-        const materials = await getLearningMaterials(page, module.url);
+        const { materials } = await getLearningMaterials(page, module.id);
         
         for (const material of materials) {
           let materialName = sanitizeFilename(material.title);
@@ -186,7 +186,7 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
               // Extrahiere den Dateinamen aus dem Correction-Objekt
               let filename = correction.filename || 'Korrekturhinweis';
               // Bereinige den Dateinamen (entferne HTML-Tags und Extra-Text)
-              filename = filename.replace(/<[^>]*>/g, '').trim();
+              filename = filename.replace(/<[^>]*>/g, '').replace(/\u00A0/g, ' ').trim();
               // Falls kein guter Name, nutze einen Default
               if (!filename || filename.length < 3) {
                 filename = 'Korrekturhinweis.pdf';
@@ -225,8 +225,9 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
 /**
  * Prüft die heruntergeladenen Dateien
  * @param {string} downloadDir - Download Verzeichnis
+ * @param {Object} [expectedByModule] - Erwartete Studienhefte pro Modul (aus dem Scraping)
  */
-export async function verifyDownloads(downloadDir) {
+export async function verifyDownloads(downloadDir, expectedByModule = {}) {
   console.log('\n📊 Überprüfe heruntergeladene Dateien...\n');
 
   let stats = {
@@ -277,8 +278,96 @@ export async function verifyDownloads(downloadDir) {
     console.log(`   PDFs: ${stats.pdfs}`);
     console.log(`   Gesamtgröße: ${(stats.totalSize / 1024 / 1024).toFixed(2)} MB`);
     console.log('═'.repeat(50));
+
+    // Abgleich: erwartete Studienhefte (nach Titel) gegen Downloads
+    const expectedModules = Object.entries(expectedByModule).filter(
+      ([, expected]) => expected && expected.titles && expected.titles.length > 0
+    );
+
+    if (expectedModules.length > 0) {
+      console.log('\n🔍 Vollständigkeit (erwartete Studienhefte):');
+      let missingTotal = 0;
+
+      for (const [moduleName, expected] of expectedModules) {
+        const modulePath = path.join(downloadDir, moduleName);
+
+        if (!await fs.pathExists(modulePath)) {
+          console.log(`  ⚠️ ${moduleName}: Modul-Ordner fehlt (erwartet: ${expected.titles.length} Studienhefte)`);
+          missingTotal += expected.titles.length;
+          continue;
+        }
+
+        const missing = [];
+        for (const title of expected.titles) {
+          const normalized = normalizeMaterialName(title);
+          const folderPath = path.join(modulePath, normalized);
+
+          if (!await fs.pathExists(folderPath)) {
+            missing.push(title);
+            continue;
+          }
+
+          // Haupt-PDF muss im Heft-Ordner liegen (nicht nur der Ordner existieren)
+          const files = await fs.readdir(folderPath);
+          if (!files.includes(`${normalized}.pdf`)) {
+            missing.push(title);
+          }
+        }
+
+        if (missing.length > 0) {
+          missingTotal += missing.length;
+          console.log(`  ⚠️ ${moduleName}: ${missing.length} von ${expected.titles.length} Studienheften fehlen:`);
+          for (const title of missing) {
+            console.log(`       - ${title}`);
+          }
+        } else {
+          console.log(`  ✓ ${moduleName}: alle ${expected.titles.length} Studienhefte heruntergeladen`);
+        }
+      }
+
+      if (missingTotal === 0) {
+        console.log('\n✅ Alle Studienhefte wurden vollständig heruntergeladen.');
+      } else {
+        console.log(`\n⚠️ ${missingTotal} Studienheft(e) fehlen.`);
+      }
+    }
     
   } catch (error) {
     console.error('❌ Fehler beim Überprüfen der Downloads:', error.message);
   }
+}
+
+/**
+ * Prüft welche Titel einer Liste bereits vollständig auf der Festplatte liegen
+ * (Modul-Ordner + Haupt-PDF vorhanden). Gleiche Logik wie verifyDownloads.
+ * @param {string} moduleDir - Modulordner unter dem Download-Verzeichnis
+ * @param {Array<string>} titles - Erwartete Materialtitel
+ * @returns {Promise<Array<string>>} Titel, die fehlen
+ */
+export async function findMissingMaterials(moduleDir, titles) {
+  const missing = [];
+  for (const title of titles) {
+    const normalized = normalizeMaterialName(title);
+    const folderPath = path.join(moduleDir, normalized);
+
+    if (!await fs.pathExists(folderPath)) {
+      missing.push(title);
+      continue;
+    }
+
+    const files = await fs.readdir(folderPath);
+    if (!files.includes(`${normalized}.pdf`)) {
+      missing.push(title);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Normalisiert einen Materialnamen so, wie er als Ordner angelegt wird
+ * @param {string} name - Rohname (z.B. "ITMTH05 - IT-Sourcing und IT-Controlling")
+ * @returns {string} Normalisierter Ordnername
+ */
+export function normalizeMaterialName(name) {
+  return sanitizeFilename(name).replace(/\s*Studienheft\s*/gi, '').trim();
 }
