@@ -1,5 +1,5 @@
 node_modules/
-downloads/
+euro-fh-module-scraper-downloads/
 .env
 .env.local
 .env.*.local

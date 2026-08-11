@@ -44,7 +44,7 @@ Automatic download tool for Euro-FH learning materials. Downloads all your modul
 Downloads are organized in the following structure:
 
 ```
-downloads/
+euro-fh-module-scraper-downloads/
 ├── Module 1/
 │   ├── Study Guide 1/
 │   │   ├── Study Guide 1.pdf
@@ -84,7 +84,7 @@ Edit the `.env` file for the following options:
 | `EURO_FH_EMAIL` | Your Euro-FH email | - |
 | `EURO_FH_PASSWORD` | Your Euro-FH password | - |
 | `HEADLESS` | Start browser in headless mode | `true` |
-| `DOWNLOAD_DIR` | Directory for downloads | `./downloads` |
+| `DOWNLOAD_DIR` | Directory for downloads | `./euro-fh-module-scraper-downloads` |
 | `DOWNLOAD_TIMEOUT` | Timeout for downloads (ms) | `30000` |
 
 ## 📝 License

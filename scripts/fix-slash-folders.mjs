@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const downloadDir = process.argv[2] || path.join(__dirname, '..', 'downloads');
+const downloadDir = process.argv[2] || path.join(__dirname, '..', 'euro-fh-module-scraper-downloads');
 
 function sanitizeFilename(filename) {
   return filename

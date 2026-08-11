@@ -105,7 +105,7 @@ async function main() {
     });
 
     // Stelle sicher dass Verzeichnis existiert
-    const downloadDir = process.env.DOWNLOAD_DIR || './downloads';
+    const downloadDir = process.env.DOWNLOAD_DIR || './euro-fh-module-scraper-downloads';
     await fs.ensureDir(downloadDir);
 
     // Prüfe ob bereits Dateien existieren
