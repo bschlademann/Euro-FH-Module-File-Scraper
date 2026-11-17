@@ -104,10 +104,9 @@ export async function getModules(page) {
  * Holt alle Lernhefte eines Moduls
  * @param {puppeteer.Page} page - Authentifizierte Seite
  * @param {string} moduleId - ID des Moduls (mdl_*)
- * @param {Set<string>} [skipIds] - IDs bereits vorhandener Hefte, die übersprungen werden
  * @returns {Promise<{materials: Array, expected: {studienhefte: number, titles: Array}}>}
  */
-export async function getLearningMaterials(page, moduleId, skipIds = null) {
+export async function getLearningMaterials(page, moduleId) {
   console.log(`Lade Lernmaterialien für Modul ${moduleId}...`);
   
   try {
@@ -130,15 +129,8 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
 
     console.log(`  Gefundene Lernhefte: ${hefteIds.length} (davon ${collected.studienhefte} Studienhefte)`);
 
-    // Bereits vorhandene Hefte (Festplatten-Check in index.js) überspringen
-    let processIds = hefteIds;
-    if (skipIds && skipIds.size > 0) {
-      processIds = hefteIds.filter(id => !skipIds.has(id));
-      console.log(`  ${hefteIds.length - processIds.length} bereits vorhandene Lernhefte werden übersprungen`);
-    }
-
     // Nichts zu tun?
-    if (processIds.length === 0) {
+    if (hefteIds.length === 0) {
       console.log(`  Modul vollständig, überspringe`);
       return {
         materials: [],
@@ -170,7 +162,7 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
     // Schritt 3: Für jedes fehlende Lernheft PDFs holen.
     // Erst direkt aus dem DOM lesen (0 Wartezeit); nur wenn kein PDF-Link
     // vorhanden ist, wird gewartet und ggf. geklickt.
-    for (const heftId of processIds) {
+    for (const heftId of hefteIds) {
       try {
         console.log(`    Verarbeite ${heftId}...`);
 

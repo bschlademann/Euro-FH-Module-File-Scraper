@@ -1,9 +1,11 @@
 import axios from 'axios';
 import fs from 'fs-extra';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MANIFEST_NAME = '.sync-manifest.json';
 
 /**
  * Sanitiert Dateinamen (entfernt ungültige Zeichen)
@@ -18,34 +20,143 @@ function sanitizeFilename(filename) {
 }
 
 /**
- * Lädt eine PDF herunter und speichert sie
+ * Lädt das Sync-Manifest aus dem Download-Verzeichnis.
+ * Enthält pro Datei den remoteKey (uid + Dateiname) und den SHA-256 des Inhalts.
+ * @param {string} downloadDir - Download-Verzeichnis
+ * @param {{deepCheck?: boolean}} [options] - Optionen
+ * @returns {Promise<Object>} Manifest-Helfer
+ */
+export async function loadSyncManifest(downloadDir, options = {}) {
+  const manifestPath = path.join(downloadDir, MANIFEST_NAME);
+  let data = { version: 1, files: {} };
+
+  if (await fs.pathExists(manifestPath)) {
+    try {
+      const loaded = await fs.readJson(manifestPath);
+      if (loaded && loaded.files && typeof loaded.files === 'object') data = loaded;
+    } catch (error) {
+      console.warn(`Sync-Manifest konnte nicht gelesen werden, starte neu: ${error.message}`);
+    }
+  }
+
+  let dirty = false;
+  const counts = { newFiles: 0, updated: 0, unchanged: 0, failed: 0 };
+
+  return {
+    deepCheck: options.deepCheck === true,
+    counts,
+    keyFor(filepath) {
+      return path.relative(downloadDir, filepath).split(path.sep).join('/');
+    },
+    get(key) {
+      return data.files[key] || null;
+    },
+    set(key, value) {
+      data.files[key] = { ...value, checkedAt: new Date().toISOString() };
+      dirty = true;
+    },
+    touch(key) {
+      if (data.files[key]) {
+        data.files[key].checkedAt = new Date().toISOString();
+        dirty = true;
+      }
+    },
+    record(kind) {
+      if (kind in counts) counts[kind]++;
+    },
+    async save() {
+      if (!dirty) return;
+      await fs.writeJson(manifestPath, data, { spaces: 2 });
+      dirty = false;
+    }
+  };
+}
+
+/**
+ * Wandelt eine Viewer-URL (/studium/index/pdf?file=...) in die echte Download-URL um.
+ * @param {string} url - Viewer- oder Download-URL
+ * @returns {string} Download-URL
+ */
+export function resolveDownloadUrl(url) {
+  if (url.includes('/studium/index/pdf?') && url.includes('file=')) {
+    const fileMatch = url.match(/file=([^&]+)/);
+    if (fileMatch) {
+      try {
+        return 'https://www.euro-fh-campus.de' + decodeURIComponent(fileMatch[1]);
+      } catch (error) {
+        console.warn(`Konnte file-Parameter nicht dekodieren: ${error.message}`);
+      }
+    }
+  }
+  return url;
+}
+
+/**
+ * Baut einen stabilen Fingerprint aus der Download-URL.
+ * Die Plattform vergibt bei einer neuen Version eine neue uid und einen neuen Dateinamen.
+ * @param {string} downloadUrl - Download-URL
+ * @returns {string} remoteKey
+ */
+function buildRemoteKey(downloadUrl) {
+  try {
+    const url = new URL(downloadUrl);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const filename = parts[parts.length - 1] || '';
+    const uidIndex = parts.indexOf('uid');
+    const uid = uidIndex >= 0 ? parts[uidIndex + 1] : '';
+    return uid ? `${uid}|${filename}` : downloadUrl;
+  } catch {
+    return downloadUrl;
+  }
+}
+
+/**
+ * Berechnet den SHA-256 einer lokalen Datei (streamend, speicherschonend).
+ * @param {string} filepath - Dateipfad
+ * @returns {Promise<string>} Hex-Hash
+ */
+async function hashFile(filepath) {
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filepath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+  return hash.digest('hex');
+}
+
+/**
+ * Lädt eine PDF herunter und speichert sie nur, wenn sie neu oder geändert ist.
  * @param {string} url - Download URL
  * @param {string} filepath - Zielpath
  * @param {string} description - Beschreibung für Logging
- * @param {puppeteer.Page} page - Optional: Puppeteer Page um Cookies zu holen
- * @param {string} duplicateHandling - 'overwrite' oder 'skip'
+ * @param {puppeteer.Page} [page] - Optional: Puppeteer Page um Cookies zu holen
+ * @param {Object} [sync] - Optional: Manifest-Helfer aus loadSyncManifest()
  */
-export async function downloadPdf(url, filepath, description = 'PDF', page = null, duplicateHandling = 'overwrite') {
+export async function downloadPdf(url, filepath, description = 'PDF', page = null, sync = null) {
   try {
     if (!url) {
       console.warn(`Keine URL für ${description} vorhanden`);
+      sync?.record('failed');
       return false;
     }
 
-    // Prüfe ob Datei bereits existiert
+    const downloadUrl = resolveDownloadUrl(url);
+    const remoteKey = buildRemoteKey(downloadUrl);
+    const key = sync ? sync.keyFor(filepath) : null;
+    const entry = sync ? sync.get(key) : null;
     const fileExists = await fs.pathExists(filepath);
-    if (fileExists) {
-      if (duplicateHandling === 'skip') {
-        console.log(`Übersprungen (existiert bereits): ${description}`);
-        return true;
-      }
+
+    // Gleiche Quelle und Datei vorhanden: kein Download nötig
+    if (entry && fileExists && entry.remoteKey === remoteKey && !sync.deepCheck) {
+      console.log(`Unverändert: ${description}`);
+      sync.touch(key);
+      sync.record('unchanged');
+      return true;
     }
 
-    // Stelle sicher dass Verzeichnis existiert
-    const dir = path.dirname(filepath);
-    await fs.ensureDir(dir);
-
-    console.log(`Lade herunter: ${description}`);
+    await fs.ensureDir(path.dirname(filepath));
 
     // Hole Cookies von Puppeteer Page wenn vorhanden
     let cookieHeader = '';
@@ -55,31 +166,13 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
         if (cookies.length > 0) {
           cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         }
-      } catch (e) {
-        console.warn(`Konnte Cookies nicht abrufen: ${e.message}`);
+      } catch (error) {
+        console.warn(`Konnte Cookies nicht abrufen: ${error.message}`);
       }
     }
 
-    // WICHTIG: URLs von /studium/index/pdf sind Viewer, nicht direkter Download
-    // Wir müssen den echten Download-Link aus dem 'file' Parameter extrahieren
-    let downloadUrl = url;
-    
-    if (url.includes('/studium/index/pdf?') && url.includes('file=')) {
-      // Extrahiere den file-Parameter und dekodiere ihn
-      const fileMatch = url.match(/file=([^&]+)/);
-      if (fileMatch) {
-        try {
-          const encodedFile = fileMatch[1];
-          const decodedFile = decodeURIComponent(encodedFile);
-          downloadUrl = 'https://www.euro-fh-campus.de' + decodedFile;
-          console.log(`   Konvertiere Viewer-URL zu Download-URL`);
-        } catch (e) {
-          console.warn(`Konnte file-Parameter nicht dekodieren: ${e.message}`);
-        }
-      }
-    }
+    console.log(`Lade herunter: ${description}`);
 
-    // Nutze axios zum Download (besser für binäre Dateien)
     const response = await axios.get(downloadUrl, {
       responseType: 'arraybuffer',
       timeout: 60000,
@@ -97,26 +190,49 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
     // Validiere dass wir tatsächlich eine PDF haben
     let isPdf = false;
     if (fileBuffer && fileBuffer.length > 0) {
-      // Prüfe auf PDF Signatur (%PDF-)
-      if (fileBuffer.toString('ascii', 0, 4) === '%PDF') {
-        isPdf = true;
-      }
+      if (fileBuffer.toString('ascii', 0, 4) === '%PDF') isPdf = true;
     }
 
     if (!isPdf && fileBuffer && fileBuffer.length > 0) {
-      // Prüfe ob es HTML ist (häufig bei Fehlern)
       const contentStr = fileBuffer.toString('utf-8', 0, Math.min(500, fileBuffer.length));
       if (contentStr.includes('<html') || contentStr.includes('<!DOCTYPE') || contentStr.includes('<?xml')) {
         console.error(`${description}: Heruntergeladene Datei ist HTML, keine PDF!`);
         console.error(`   URL: ${url}`);
         console.error(`   Erste 200 Zeichen: ${contentStr.substring(0, 200)}`);
+        sync?.record('failed');
         return false;
       }
     }
 
+    const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const size = fileBuffer.length;
+
+    if (entry && fileExists) {
+      if (entry.sha256 === sha256) {
+        console.log(`Unverändert (Inhalt identisch): ${description}`);
+        sync.set(key, { remoteKey, sha256, size });
+        sync.record('unchanged');
+        return true;
+      }
+      console.log(`Neue Version erkannt: ${description}`);
+    } else if (sync && fileExists) {
+      // Bestandsdatei ohne Manifest-Eintrag: einmalig per Hash abgleichen
+      const localHash = await hashFile(filepath);
+      if (localHash === sha256) {
+        console.log(`Unverändert (Baseline geprüft): ${description}`);
+        sync.set(key, { remoteKey, sha256, size });
+        sync.record('unchanged');
+        return true;
+      }
+      console.log(`Neue Version erkannt (Baseline): ${description}`);
+    }
+
     await fs.writeFile(filepath, fileBuffer);
-    const fileSizeKb = (fileBuffer.length / 1024).toFixed(2);
-    console.log(`Gespeichert: ${description} (${fileSizeKb} KB)`);
+    if (sync) {
+      sync.set(key, { remoteKey, sha256, size });
+      sync.record(fileExists ? 'updated' : 'newFiles');
+    }
+    console.log(`Gespeichert: ${description} (${(size / 1024).toFixed(2)} KB)`);
     return true;
 
   } catch (error) {
@@ -124,6 +240,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
     if (error.response) {
       console.error(`   HTTP Status: ${error.response.status}`);
     }
+    sync?.record('failed');
     return false;
   }
 }
@@ -335,32 +452,6 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
   } catch (error) {
     console.error('Fehler beim Überprüfen der Downloads:', error.message);
   }
-}
-
-/**
- * Prüft welche Titel einer Liste bereits vollständig auf der Festplatte liegen
- * (Modul-Ordner + Haupt-PDF vorhanden). Gleiche Logik wie verifyDownloads.
- * @param {string} moduleDir - Modulordner unter dem Download-Verzeichnis
- * @param {Array<string>} titles - Erwartete Materialtitel
- * @returns {Promise<Array<string>>} Titel, die fehlen
- */
-export async function findMissingMaterials(moduleDir, titles) {
-  const missing = [];
-  for (const title of titles) {
-    const normalized = normalizeMaterialName(title);
-    const folderPath = path.join(moduleDir, normalized);
-
-    if (!await fs.pathExists(folderPath)) {
-      missing.push(title);
-      continue;
-    }
-
-    const files = await fs.readdir(folderPath);
-    if (!files.includes(`${normalized}.pdf`)) {
-      missing.push(title);
-    }
-  }
-  return missing;
 }
 
 /**

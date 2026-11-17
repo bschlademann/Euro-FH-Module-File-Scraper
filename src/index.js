@@ -2,11 +2,10 @@ import puppeteer from 'puppeteer';
 import fs from 'fs-extra';
 import path from 'path';
 import dotenv from 'dotenv';
-import readline from 'readline';
 import { fileURLToPath } from 'url';
 import { login, logout, isLoggedIn } from './auth.js';
 import { getModules, getLearningMaterials, collectHeftIds } from './scraper.js';
-import { downloadAllMaterials, downloadPdf, verifyDownloads, findMissingMaterials } from './downloader.js';
+import { loadSyncManifest, downloadPdf, verifyDownloads } from './downloader.js';
 
 dotenv.config();
 
@@ -22,23 +21,6 @@ function sanitizeFilename(filename) {
     .replace(/[<>:"|?*/\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-/**
- * CLI Eingabe
- */
-function getInput(prompt) {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-    
-    rl.question(prompt, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
 }
 
 /**
@@ -121,35 +103,16 @@ async function main() {
 
     // Prüfe ob bereits Dateien existieren
     const existing = await checkExistingFiles(modules, downloadDir);
+    const deepCheck = process.argv.includes('--deep-check');
+    const sync = await loadSyncManifest(downloadDir, { deepCheck });
 
-    // Frage IMMER nach dem Modus
-    let duplicateHandling = 'overwrite'; // default
-    console.log('\nDownload-Modus:');
-
+    console.log('\nSync-Modus: nur neue und geänderte Dateien werden heruntergeladen.');
     if (existing.pdfCount > 0) {
-      console.log(`${existing.pdfCount} PDF(s) in ${existing.moduleDirs} Modulordner(n) gefunden ` +
+      console.log(`${existing.pdfCount} PDF(s) in ${existing.moduleDirs} Modulordner(n) vorhanden ` +
         `(inkl. Korrekturhinweisen; ${existing.totalFiles} Dateien insgesamt).`);
     }
-
-    let validChoice = false;
-    while (!validChoice) {
-      const modePrompt = existing.pdfCount > 0 
-        ? 'Was möchtest du tun?\n  1. Überschreiben\n  2. Überspringen\nWahl (1 oder 2): '
-        : 'Wie sollen existierende Dateien behandelt werden?\n  1. Überschreiben (wenn später vorhanden)\n  2. Überspringen (wenn später vorhanden)\nWahl (1 oder 2): ';
-      
-      const modeChoice = await getInput(modePrompt);
-      
-      if (modeChoice.trim() === '1') {
-        duplicateHandling = 'overwrite';
-        console.log('Modus: Dateien werden überschrieben\n');
-        validChoice = true;
-      } else if (modeChoice.trim() === '2') {
-        duplicateHandling = 'skip';
-        console.log('Modus: Existierende Dateien werden übersprungen\n');
-        validChoice = true;
-      } else {
-        console.log('Ungültige Eingabe. Bitte 1 oder 2 eingeben.\n');
-      }
+    if (deepCheck) {
+      console.log('Deep-Check aktiv: alle Dateien werden heruntergeladen und per Hash geprüft.');
     }
 
     // Lade alle Materialien herunter
@@ -175,27 +138,7 @@ async function main() {
           titles: collected.titles
         };
 
-        // Festplatten-Check: welche Hefte sind bereits vollständig vorhanden?
-        let skipIds = null;
-        if (duplicateHandling === 'skip') {
-          const allTitles = Array.from(new Set(
-            Object.values(collected.titleById).filter(t => t)
-          ));
-          const missingTitles = await findMissingMaterials(moduleDir, allTitles);
-
-          skipIds = new Set(
-            Object.entries(collected.titleById)
-              .filter(([, title]) => title && !missingTitles.includes(title))
-              .map(([id]) => id)
-          );
-
-          if (skipIds.size > 0 && skipIds.size === collected.ids.length) {
-            console.log(`  Modul vollständig, überspringe (${collected.ids.length} Lernhefte vorhanden)`);
-            continue;
-          }
-        }
-
-        const { materials } = await getLearningMaterials(page, module.id, skipIds);
+        const { materials } = await getLearningMaterials(page, module.id);
         
         for (const material of materials) {
           let materialName = sanitizeFilename(material.title);
@@ -212,7 +155,7 @@ async function main() {
           if (material.pdfUrl) {
             const pdfPath = path.join(materialDir, `${materialName}.pdf`);
             console.log(`     URL: ${material.pdfUrl}`);
-            await downloadPdf(material.pdfUrl, pdfPath, `${moduleName}/${materialName}`, page, duplicateHandling);
+            await downloadPdf(material.pdfUrl, pdfPath, `${moduleName}/${materialName}`, page, sync);
           }
           
           // Download Korrekturhinweise wenn vorhanden
@@ -234,7 +177,7 @@ async function main() {
               const fullUrl = correction.url.startsWith('http') 
                 ? correction.url 
                 : `https://www.euro-fh-campus.de${correction.url}`;
-              await downloadPdf(fullUrl, correctionPath, `${moduleName}/${materialName} (${filename})`, page, duplicateHandling);
+              await downloadPdf(fullUrl, correctionPath, `${moduleName}/${materialName} (${filename})`, page, sync);
             }
           }
         }
@@ -242,6 +185,16 @@ async function main() {
         console.error(`  Fehler bei Modul ${moduleName}:`, error.message);
       }
     }
+
+    // Manifest speichern und Sync-Ergebnis zeigen
+    await sync.save();
+    console.log('\n' + '═'.repeat(50));
+    console.log('Sync-Ergebnis:');
+    console.log(`   Neu heruntergeladen: ${sync.counts.newFiles}`);
+    console.log(`   Neue Version erkannt: ${sync.counts.updated}`);
+    console.log(`   Unverändert: ${sync.counts.unchanged}`);
+    console.log(`   Fehler: ${sync.counts.failed}`);
+    console.log('═'.repeat(50));
 
     // Zeige Zusammenfassung
     await verifyDownloads(downloadDir, expectedByModule);
