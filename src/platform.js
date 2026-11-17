@@ -173,14 +173,55 @@ async function fetchLeHeftData(heft, cookie) {
  * @returns {Promise<Array>} Materialien mit moduleId, title, pdfUrl, corrections
  */
 export async function getAllMaterials(page, concurrency = 8) {
+  // Auf 1 setzen: Fortschritt fuer jedes Heft ausgeben. Hoehere Werte
+  // reduzieren die Ausgabe auf jedes n-te Heft.
+  const LOG_EVERY = 1;
+
+  function formatDuration(ms) {
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    if (seconds < 60) return `${seconds} s`;
+    return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
+  }
+
   const hefte = await collectAllHefte(page);
   const cookies = await page.cookies();
   const cookie = cookies.map(c => `${c.name}=${c.value}`).join('; ');
   const results = new Array(hefte.length);
+  const workerCount = Math.max(1, Math.min(concurrency, hefte.length));
+  const startedAt = Date.now();
+  const digits = String(hefte.length).length;
   let next = 0;
   let requests = 0;
+  let completed = 0;
 
-  console.log(`  ${hefte.length} Lernhefte im DOM gefunden, hole URLs per HTTP...`);
+  console.log(`  ${hefte.length} Lernhefte im DOM gefunden, hole URLs per HTTP (${workerCount} parallel)...`);
+
+  function logProgress(material) {
+    if (completed % LOG_EVERY !== 0 && completed !== hefte.length) return;
+
+    const elapsed = Date.now() - startedAt;
+    const remaining = completed > 0 ? (elapsed / completed) * (hefte.length - completed) : 0;
+    const current = String(completed).padStart(digits, ' ');
+    const title = (material.title || material.heftId || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const shortTitle = title.length > 70 ? `${title.slice(0, 67)}...` : title;
+
+    let status;
+    if (material.pdfError || material.correctionError) {
+      status = `Fehler: ${material.pdfError || material.correctionError}`;
+    } else if (material.pdfUrl) {
+      const count = material.corrections ? material.corrections.length : 0;
+      status = `PDF, ${count} Korrektur${count === 1 ? '' : 'en'}`;
+    } else {
+      status = 'kein PDF';
+    }
+
+    console.log(
+      `  [${current}/${hefte.length}] ${shortTitle}: ${status}` +
+      `  (${formatDuration(elapsed)}, ca. ${formatDuration(remaining)} rest)`
+    );
+  }
 
   async function worker() {
     while (next < hefte.length) {
@@ -192,16 +233,18 @@ export async function getAllMaterials(page, concurrency = 8) {
         requests += 2;
         results[index] = await fetchLeHeftData(heft, cookie);
       }
+      completed++;
+      logProgress(results[index]);
     }
   }
 
-  const workerCount = Math.max(1, Math.min(concurrency, hefte.length));
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+  const duration = Date.now() - startedAt;
   const mitPdf = results.filter(m => m.pdfUrl).length;
   const mitKorrektur = results.filter(m => m.corrections && m.corrections.length > 0).length;
   const fehler = results.filter(m => m.pdfError || m.correctionError);
-  console.log(`  ${requests} HTTP-Requests, ${mitPdf} PDFs, ${mitKorrektur} Hefte mit Korrekturhinweisen`);
+  console.log(`  ${requests} HTTP-Requests, ${mitPdf} PDFs, ${mitKorrektur} Hefte mit Korrekturhinweisen in ${formatDuration(duration)}`);
   if (fehler.length > 0) {
     console.warn(`  ${fehler.length} Hefte mit Abruf-Fehlern:`);
     for (const m of fehler.slice(0, 10)) {
