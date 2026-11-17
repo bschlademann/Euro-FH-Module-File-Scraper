@@ -38,7 +38,7 @@ export async function login(browser) {
     console.log('Klicke Login-Button und warte auf Authentifizierung...');
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {
-        console.log('⚠️ Navigation timeout - prüfe ob bereits angemeldet');
+        console.log('Navigation timeout - prüfe ob bereits angemeldet');
       }),
       page.click('button[type="submit"]')
     ]);
@@ -136,10 +136,10 @@ export async function logout(page) {
       try {
         await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 });
       } catch (e) {
-        console.log('⚠️ Logout Navigation-Timeout — fahre mit Cleanup fort');
+        console.log('Logout Navigation-Timeout - fahre mit Cleanup fort');
       }
     } else {
-      console.log('⚠️ Kein Logout-Button gefunden — führe Cleanup durch');
+      console.log('Kein Logout-Button gefunden - führe Cleanup durch');
     }
 
     // Versuche Cookies und Cache über CDP zu löschen
@@ -148,7 +148,7 @@ export async function logout(page) {
       await client.send('Network.clearBrowserCookies');
       await client.send('Network.clearBrowserCache');
     } catch (e) {
-      console.warn('⚠️ Konnte Cookies/Cache nicht per CDP löschen:', e.message);
+      console.warn('Konnte Cookies/Cache nicht per CDP löschen:', e.message);
     }
 
     // Leere Session-/LocalStorage (falls noch vorhanden)
@@ -161,8 +161,8 @@ export async function logout(page) {
       // ignore
     }
 
-    console.log('✅ Abmeldung (Cleanup) ausgeführt');
+    console.log('Abmeldung (Cleanup) ausgeführt');
   } catch (error) {
-    console.warn('⚠️ Logout konnte nicht vollständig durchgeführt werden:', error.message);
+    console.warn('Logout konnte nicht vollständig durchgeführt werden:', error.message);
   }
 }
