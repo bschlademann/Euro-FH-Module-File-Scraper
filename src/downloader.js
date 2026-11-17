@@ -2,9 +2,7 @@ import axios from 'axios';
 import fs from 'fs-extra';
 import path from 'path';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MANIFEST_NAME = '.sync-manifest.json';
 
 /**
@@ -246,100 +244,6 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
 }
 
 /**
- * Erstellt die Ordnerstruktur und speichert alle Materialien
- * @param {Array} modules - Array mit Modulen
- * @param {puppeteer.Page} page - Authentifizierte Seite
- * @param {string} downloadDir - Basis-Download Verzeichnis
- */
-export async function downloadAllMaterials(modules, page, downloadDir) {
-  console.log('\nErstelle Ordnerstruktur und lade Materialien herunter...\n');
-
-  let totalDownloaded = 0;
-  let totalFailed = 0;
-
-  for (const module of modules) {
-    const moduleName = sanitizeFilename(module.title);
-    const moduleDir = path.join(downloadDir, moduleName);
-    
-    console.log(`\nModul: ${moduleName}`);
-    
-    try {
-      // Hole Lernmaterialien für dieses Modul
-      const materials = await page.evaluate((moduleUrl) => {
-        // Diese Funktion würde auf der Server-Seite ausgeführt werden
-        // Hier eine vereinfachte Version
-        return [];
-      }, module.url);
-
-      // Falls materials leer ist, versuche über die getLearningMaterials Funktion
-      const { getLearningMaterials } = await import('./scraper.js').catch(() => ({}));
-      
-      if (getLearningMaterials) {
-        const { materials } = await getLearningMaterials(page, module.id);
-        
-        for (const material of materials) {
-          let materialName = sanitizeFilename(material.title);
-          // Entferne "Studienheft" falls es noch irgendwie im Namen ist
-          materialName = materialName.replace(/\s*Studienheft\s*/gi, '').trim();
-          const materialDir = path.join(moduleDir, materialName);
-          
-          console.log(`  Lernheft: ${materialName}`);
-          
-          // Download Lernheft PDF
-          if (material.pdfUrl) {
-            const pdfPath = path.join(materialDir, `${materialName}.pdf`);
-            const success = await downloadPdf(
-              material.pdfUrl,
-              pdfPath,
-              `${moduleName}/${materialName}`
-            );
-            if (success) totalDownloaded++;
-            else totalFailed++;
-          }
-          
-          // Download Korrekturhinweise wenn vorhanden
-          if (material.corrections && material.corrections.length > 0) {
-            for (const correction of material.corrections) {
-              // Extrahiere den Dateinamen aus dem Correction-Objekt
-              let filename = correction.filename || 'Korrekturhinweis';
-              // Bereinige den Dateinamen (entferne HTML-Tags und Extra-Text)
-              filename = filename.replace(/<[^>]*>/g, '').replace(/\u00A0/g, ' ').trim();
-              // Falls kein guter Name, nutze einen Default
-              if (!filename || filename.length < 3) {
-                filename = 'Korrekturhinweis.pdf';
-              }
-              
-              const correctionPath = path.join(materialDir, filename);
-              const fullUrl = correction.url.startsWith('http') 
-                ? correction.url 
-                : `https://www.euro-fh-campus.de${correction.url}`;
-              const success = await downloadPdf(
-                fullUrl,
-                correctionPath,
-                `${moduleName}/${materialName} (${filename})`
-              );
-              if (success) totalDownloaded++;
-              else totalFailed++;
-            }
-          }
-        }
-      }
-      
-    } catch (error) {
-      console.error(`  Fehler bei Modul ${moduleName}:`, error.message);
-      totalFailed++;
-    }
-  }
-
-  console.log('\n');
-  console.log('═'.repeat(50));
-  console.log(`Download abgeschlossen!`);
-  console.log(`   Erfolgreich: ${totalDownloaded}`);
-  console.log(`   Fehler: ${totalFailed}`);
-  console.log('═'.repeat(50));
-}
-
-/**
  * Prüft die heruntergeladenen Dateien
  * @param {string} downloadDir - Download Verzeichnis
  * @param {Object} [expectedByModule] - Erwartete Studienhefte pro Modul (aus dem Scraping)
@@ -360,31 +264,34 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
     for (const moduleName of modules) {
       const modulePath = path.join(downloadDir, moduleName);
       const stat = await fs.stat(modulePath);
-      
-      if (stat.isDirectory()) {
-        stats.modules++;
-        console.log(`${moduleName}`);
-        
-        const materials = await fs.readdir(modulePath);
-        
-        for (const materialName of materials) {
-          const materialPath = path.join(modulePath, materialName);
-          const materialStat = await fs.stat(materialPath);
-          
-          if (materialStat.isDirectory()) {
-            stats.materials++;
-            const files = await fs.readdir(materialPath);
-            const pdfFiles = files.filter(f => f.endsWith('.pdf'));
-            stats.pdfs += pdfFiles.length;
-            
-            for (const pdfFile of pdfFiles) {
-              const pdfPath = path.join(materialPath, pdfFile);
-              const pdfStat = await fs.stat(pdfPath);
-              stats.totalSize += pdfStat.size;
-              console.log(`   ${materialName}/${pdfFile} (${(pdfStat.size / 1024 / 1024).toFixed(2)} MB)`);
-            }
-          }
-        }
+
+      if (!stat.isDirectory()) continue;
+
+      stats.modules++;
+      console.log(`${moduleName}`);
+
+      // Rekursiv zählen: einzelne PDFs liegen teils tiefer als eine Ebene
+      // unter dem Heft-Ordner (alte Ordnerstrukturen aus früheren Läufen).
+      const entries = await fs.readdir(modulePath, { recursive: true, withFileTypes: true });
+      const materialDirs = new Set();
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const parent = entry.parentPath || entry.path;
+        const relative = path.relative(modulePath, path.join(parent, entry.name));
+        if (relative) materialDirs.add(relative.split(path.sep)[0]);
+      }
+      stats.materials += materialDirs.size;
+
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.pdf')) continue;
+        const parent = entry.parentPath || entry.path;
+        const pdfPath = path.join(parent, entry.name);
+        const pdfStat = await fs.stat(pdfPath);
+        stats.pdfs++;
+        stats.totalSize += pdfStat.size;
+        const relative = path.relative(modulePath, pdfPath).split(path.sep).join('/');
+        console.log(`   ${relative} (${(pdfStat.size / 1024 / 1024).toFixed(2)} MB)`);
       }
     }
     
