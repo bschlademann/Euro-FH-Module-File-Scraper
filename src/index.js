@@ -4,7 +4,8 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { login, logout, isLoggedIn } from './auth.js';
-import { getModules, getLearningMaterials, collectHeftIds } from './scraper.js';
+import { getModules } from './scraper.js';
+import { getAllMaterials } from './platform.js';
 import { loadSyncManifest, downloadPdf, verifyDownloads } from './downloader.js';
 
 dotenv.config();
@@ -115,13 +116,22 @@ async function main() {
       console.log('Deep-Check aktiv: alle Dateien werden heruntergeladen und per Hash geprüft.');
     }
 
-    // Lade alle Materialien herunter
-    console.log('Dies kann einige Zeit dauern...\n');
+    // Alle Materialien aller Module in einem Rutsch per HTTP ermitteln.
+    // Kein Klicken und Warten mehr im Browser.
+    console.log('\nErmittle alle Materialien über die direkten HTTP-Endpunkte...');
+    const allMaterials = await getAllMaterials(page);
+
+    const materialsByModule = {};
+    for (const material of allMaterials) {
+      if (!material.moduleId) continue;
+      if (!materialsByModule[material.moduleId]) materialsByModule[material.moduleId] = [];
+      materialsByModule[material.moduleId].push(material);
+    }
 
     // Erwartete Studienhefte pro Modul (für den Abgleich nach dem Download)
     const expectedByModule = {};
 
-    // Für jedes Modul: Hole Lernmaterialien und speichere
+    // Für jedes Modul: gesammelte Materialien speichern
     for (const module of modules) {
       // Erstelle Modulname mit Code: "MD ALGO - Algorithmen und Datenstrukturen"
       const moduleNameWithCode = module.code ? `${module.code} - ${module.title}` : module.title;
@@ -131,15 +141,16 @@ async function main() {
       console.log(`\nModul: ${moduleName}`);
       
       try {
-        // Pre-Scan: Hefte aus dem DOM lesen (schnell, öffnet das Modul NICHT)
-        const collected = await collectHeftIds(page, module.id);
+        const materials = materialsByModule[module.id] || [];
+
+        const expectedTitles = materials
+          .filter(m => m.type === 'studienheft' || m.kind === 'mat')
+          .map(m => m.title);
         expectedByModule[moduleName] = {
-          studienhefte: collected.studienhefte,
-          titles: collected.titles
+          studienhefte: expectedTitles.length,
+          titles: expectedTitles
         };
 
-        const { materials } = await getLearningMaterials(page, module.id);
-        
         for (const material of materials) {
           let materialName = sanitizeFilename(material.title);
           // Entferne "Studienheft" falls es noch irgendwie im Namen ist
@@ -147,10 +158,7 @@ async function main() {
           const materialDir = path.join(moduleDir, materialName);
           
           console.log(`  Lernheft: ${materialName}`);
-          if (material._debug) {
-            console.log(`     ${material._debug}`);
-          }
-          
+
           // Download PDF (nutze Page für authentifizierte Cookies)
           if (material.pdfUrl) {
             const pdfPath = path.join(materialDir, `${materialName}.pdf`);
