@@ -20,7 +20,7 @@ function skipModuleOpen() {
  * @returns {Promise<Array>} Array mit Modulen
  */
 export async function getModules(page) {
-  console.log('📚 Lade alle Module...');
+  console.log('Lade alle Module...');
   
   try {
     // Navigiere zur Modulübersicht
@@ -29,13 +29,13 @@ export async function getModules(page) {
       timeout: 30000
     });
 
-    console.log('⏳ Suche nach Modulen auf der Seite...');
+    console.log('Suche nach Modulen auf der Seite...');
     
     // Warte auf Module zu laden
     try {
       await page.waitForSelector('div.modulebox', { timeout: 15000 });
     } catch (e) {
-      console.warn('⚠️ Module nicht gefunden, versuche verzögerte Suche...');
+      console.warn('Module nicht gefunden, versuche verzögerte Suche...');
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
@@ -87,15 +87,15 @@ export async function getModules(page) {
     });
 
     if (modules.length === 0) {
-      console.warn('⚠️ Keine Module gefunden!');
-      console.log('📋 Seite HTML wird angezeigt für Debugging...');
+      console.warn('Keine Module gefunden!');
+      console.log('Seite HTML wird angezeigt für Debugging...');
     }
 
-    console.log(`✅ ${modules.length} Module gefunden!`);
+    console.log(`${modules.length} Module gefunden!`);
     return modules;
     
   } catch (error) {
-    console.error('❌ Fehler beim Abrufen der Module:', error.message);
+    console.error('Fehler beim Abrufen der Module:', error.message);
     throw error;
   }
 }
@@ -108,7 +108,7 @@ export async function getModules(page) {
  * @returns {Promise<{materials: Array, expected: {studienhefte: number, titles: Array}}>}
  */
 export async function getLearningMaterials(page, moduleId, skipIds = null) {
-  console.log(`📖 Lade Lernmaterialien für Modul ${moduleId}...`);
+  console.log(`Lade Lernmaterialien für Modul ${moduleId}...`);
   
   try {
     // Stelle sicher dass wir auf der richtigen Seite sind
@@ -121,25 +121,25 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
     }
 
     // Schritt 1: Finde alle Lernhefte (reiner DOM-Read, ohne Modul zu öffnen)
-    console.log(`  ⏳ Suche Lernhefte...`);
+    console.log(`  Suche Lernhefte...`);
 
     const materials = [];
 
     const collected = await collectHeftIds(page, moduleId);
     const hefteIds = collected.ids;
 
-    console.log(`  📖 Gefundene Lernhefte: ${hefteIds.length} (davon ${collected.studienhefte} Studienhefte)`);
+    console.log(`  Gefundene Lernhefte: ${hefteIds.length} (davon ${collected.studienhefte} Studienhefte)`);
 
     // Bereits vorhandene Hefte (Festplatten-Check in index.js) überspringen
     let processIds = hefteIds;
     if (skipIds && skipIds.size > 0) {
       processIds = hefteIds.filter(id => !skipIds.has(id));
-      console.log(`  ⏭️ ${hefteIds.length - processIds.length} bereits vorhandene Lernhefte werden übersprungen`);
+      console.log(`  ${hefteIds.length - processIds.length} bereits vorhandene Lernhefte werden übersprungen`);
     }
 
     // Nichts zu tun?
     if (processIds.length === 0) {
-      console.log(`  ✓ Modul vollständig, überspringe`);
+      console.log(`  Modul vollständig, überspringe`);
       return {
         materials: [],
         expected: {
@@ -153,7 +153,7 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
     // nachgeladen werden. (Experiment SKIP_MODULE_OPEN: testen, ob die
     // Editoren auch ohne Öffnen im initialen DOM stehen.)
     if (skipModuleOpen()) {
-      console.log(`  ⚡ SKIP_MODULE_OPEN aktiv: Modul wird nicht geöffnet`);
+      console.log(`  SKIP_MODULE_OPEN aktiv: Modul wird nicht geöffnet`);
     } else {
       await page.evaluate((modId) => {
         const moduleBox = document.querySelector(`div.modulebox[id="mdl_${modId}"]`);
@@ -172,7 +172,7 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
     // vorhanden ist, wird gewartet und ggf. geklickt.
     for (const heftId of processIds) {
       try {
-        console.log(`    ⏳ Verarbeite ${heftId}...`);
+        console.log(`    Verarbeite ${heftId}...`);
 
         // Hefttypen ohne PDF (Flashcards, Klausur) bekommen nur eine kurze Wartezeit.
         const heftType = (collected.types && collected.types[heftId]) || '';
@@ -210,7 +210,7 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
         }
 
         if (!heftMaterial) {
-          console.log(`    ⚠️ ${heftId}: kein PDF gefunden (${nullReason || 'unbekannt'})`);
+          console.log(`    ${heftId}: kein PDF gefunden (${nullReason || 'unbekannt'})`);
         }
 
         // Wenn keine Korrekturhinweise gefunden wurden, klicke auf den Aktualisierungen-Tab
@@ -239,14 +239,14 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
 
         if (heftMaterial) {
           materials.push(heftMaterial);
-          console.log(`    ✓ ${heftMaterial.title}`);
+          console.log(`    ${heftMaterial.title}`);
         }
       } catch (error) {
-        console.error(`    ❌ Fehler bei Lernheft ${heftId}:`, error.message);
+        console.error(`    Fehler bei Lernheft ${heftId}:`, error.message);
       }
     }
 
-    console.log(`✅ ${materials.length} Lernmaterialien gefunden!`);
+    console.log(`${materials.length} Lernmaterialien gefunden!`);
 
     return {
       materials,
@@ -257,7 +257,7 @@ export async function getLearningMaterials(page, moduleId, skipIds = null) {
     };
     
   } catch (error) {
-    console.error('❌ Fehler beim Abrufen der Lernmaterialien:', error.message);
+    console.error('Fehler beim Abrufen der Lernmaterialien:', error.message);
     throw error;
   }
 }

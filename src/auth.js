@@ -14,7 +14,7 @@ export async function login(browser) {
   const page = await browser.newPage();
   
   try {
-    console.log('🔐 Melde mich an der Euro-FH Plattform an...');
+    console.log('Melde mich an der Euro-FH Plattform an...');
     
     // Euro-FH Login Seite
     await page.goto('https://www.euro-fh-campus.de/', {
@@ -23,19 +23,19 @@ export async function login(browser) {
     });
 
     // Warte auf Login-Input (id="login") und gebe Benutzername ein
-    console.log('⏳ Warte auf Benutzername-Feld...');
+    console.log('Warte auf Benutzername-Feld...');
     await page.waitForSelector('#login', { timeout: 15000 });
     await page.type('#login', process.env.EURO_FH_EMAIL || '');
-    console.log('✓ Benutzername eingegeben');
+    console.log('Benutzername eingegeben');
     
     // Warte auf Password-Input (id="paswd") und gebe Passwort ein
-    console.log('⏳ Warte auf Passwort-Feld...');
+    console.log('Warte auf Passwort-Feld...');
     await page.waitForSelector('#paswd', { timeout: 15000 });
     await page.type('#paswd', process.env.EURO_FH_PASSWORD || '');
-    console.log('✓ Passwort eingegeben');
+    console.log('Passwort eingegeben');
     
     // Klicke Login Button und warte auf Navigation
-    console.log('⏳ Klicke Login-Button und warte auf Authentifizierung...');
+    console.log('Klicke Login-Button und warte auf Authentifizierung...');
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {
         console.log('⚠️ Navigation timeout - prüfe ob bereits angemeldet');
@@ -46,11 +46,11 @@ export async function login(browser) {
     // Warte kurz um sicherzustellen dass alles geladen ist
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    console.log('✅ Erfolgreich angemeldet!');
+    console.log('Erfolgreich angemeldet!');
     return page;
     
   } catch (error) {
-    console.error('❌ Login fehlgeschlagen:', error.message);
+    console.error('Login fehlgeschlagen:', error.message);
     console.error('Details:', error);
     await page.close();
     throw error;
@@ -85,7 +85,7 @@ export async function isLoggedIn(page) {
  */
 export async function logout(page) {
   try {
-    console.log('🔓 Melde mich ab...');
+    console.log('Melde mich ab...');
 
     // Versuche bekannte Logout-Selectoren zu klicken
     const selectors = [

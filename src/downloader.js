@@ -28,7 +28,7 @@ function sanitizeFilename(filename) {
 export async function downloadPdf(url, filepath, description = 'PDF', page = null, duplicateHandling = 'overwrite') {
   try {
     if (!url) {
-      console.warn(`⚠️ Keine URL für ${description} vorhanden`);
+      console.warn(`Keine URL für ${description} vorhanden`);
       return false;
     }
 
@@ -36,7 +36,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
     const fileExists = await fs.pathExists(filepath);
     if (fileExists) {
       if (duplicateHandling === 'skip') {
-        console.log(`⏭️ Übersprungen (existiert bereits): ${description}`);
+        console.log(`Übersprungen (existiert bereits): ${description}`);
         return true;
       }
     }
@@ -45,7 +45,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
     const dir = path.dirname(filepath);
     await fs.ensureDir(dir);
 
-    console.log(`⬇️ Lade herunter: ${description}`);
+    console.log(`Lade herunter: ${description}`);
 
     // Hole Cookies von Puppeteer Page wenn vorhanden
     let cookieHeader = '';
@@ -56,7 +56,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
           cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         }
       } catch (e) {
-        console.warn(`⚠️ Konnte Cookies nicht abrufen: ${e.message}`);
+        console.warn(`Konnte Cookies nicht abrufen: ${e.message}`);
       }
     }
 
@@ -72,9 +72,9 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
           const encodedFile = fileMatch[1];
           const decodedFile = decodeURIComponent(encodedFile);
           downloadUrl = 'https://www.euro-fh-campus.de' + decodedFile;
-          console.log(`   📝 Konvertiere Viewer-URL zu Download-URL`);
+          console.log(`   Konvertiere Viewer-URL zu Download-URL`);
         } catch (e) {
-          console.warn(`⚠️ Konnte file-Parameter nicht dekodieren: ${e.message}`);
+          console.warn(`Konnte file-Parameter nicht dekodieren: ${e.message}`);
         }
       }
     }
@@ -107,7 +107,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
       // Prüfe ob es HTML ist (häufig bei Fehlern)
       const contentStr = fileBuffer.toString('utf-8', 0, Math.min(500, fileBuffer.length));
       if (contentStr.includes('<html') || contentStr.includes('<!DOCTYPE') || contentStr.includes('<?xml')) {
-        console.error(`❌ ${description}: Heruntergeladene Datei ist HTML, keine PDF!`);
+        console.error(`${description}: Heruntergeladene Datei ist HTML, keine PDF!`);
         console.error(`   URL: ${url}`);
         console.error(`   Erste 200 Zeichen: ${contentStr.substring(0, 200)}`);
         return false;
@@ -116,11 +116,11 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
 
     await fs.writeFile(filepath, fileBuffer);
     const fileSizeKb = (fileBuffer.length / 1024).toFixed(2);
-    console.log(`✅ Gespeichert: ${description} (${fileSizeKb} KB)`);
+    console.log(`Gespeichert: ${description} (${fileSizeKb} KB)`);
     return true;
 
   } catch (error) {
-    console.error(`❌ Download fehlgeschlagen (${description}):`, error.message);
+    console.error(`Download fehlgeschlagen (${description}):`, error.message);
     if (error.response) {
       console.error(`   HTTP Status: ${error.response.status}`);
     }
@@ -135,7 +135,7 @@ export async function downloadPdf(url, filepath, description = 'PDF', page = nul
  * @param {string} downloadDir - Basis-Download Verzeichnis
  */
 export async function downloadAllMaterials(modules, page, downloadDir) {
-  console.log('\n📁 Erstelle Ordnerstruktur und lade Materialien herunter...\n');
+  console.log('\nErstelle Ordnerstruktur und lade Materialien herunter...\n');
 
   let totalDownloaded = 0;
   let totalFailed = 0;
@@ -144,7 +144,7 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
     const moduleName = sanitizeFilename(module.title);
     const moduleDir = path.join(downloadDir, moduleName);
     
-    console.log(`\n📂 Modul: ${moduleName}`);
+    console.log(`\nModul: ${moduleName}`);
     
     try {
       // Hole Lernmaterialien für dieses Modul
@@ -166,7 +166,7 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
           materialName = materialName.replace(/\s*Studienheft\s*/gi, '').trim();
           const materialDir = path.join(moduleDir, materialName);
           
-          console.log(`  📄 Lernheft: ${materialName}`);
+          console.log(`  Lernheft: ${materialName}`);
           
           // Download Lernheft PDF
           if (material.pdfUrl) {
@@ -209,14 +209,14 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
       }
       
     } catch (error) {
-      console.error(`  ❌ Fehler bei Modul ${moduleName}:`, error.message);
+      console.error(`  Fehler bei Modul ${moduleName}:`, error.message);
       totalFailed++;
     }
   }
 
   console.log('\n');
   console.log('═'.repeat(50));
-  console.log(`✅ Download abgeschlossen!`);
+  console.log(`Download abgeschlossen!`);
   console.log(`   Erfolgreich: ${totalDownloaded}`);
   console.log(`   Fehler: ${totalFailed}`);
   console.log('═'.repeat(50));
@@ -228,7 +228,7 @@ export async function downloadAllMaterials(modules, page, downloadDir) {
  * @param {Object} [expectedByModule] - Erwartete Studienhefte pro Modul (aus dem Scraping)
  */
 export async function verifyDownloads(downloadDir, expectedByModule = {}) {
-  console.log('\n📊 Überprüfe heruntergeladene Dateien...\n');
+  console.log('\nÜberprüfe heruntergeladene Dateien...\n');
 
   let stats = {
     modules: 0,
@@ -246,7 +246,7 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
       
       if (stat.isDirectory()) {
         stats.modules++;
-        console.log(`📂 ${moduleName}`);
+        console.log(`${moduleName}`);
         
         const materials = await fs.readdir(modulePath);
         
@@ -264,7 +264,7 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
               const pdfPath = path.join(materialPath, pdfFile);
               const pdfStat = await fs.stat(pdfPath);
               stats.totalSize += pdfStat.size;
-              console.log(`   📄 ${materialName}/${pdfFile} (${(pdfStat.size / 1024 / 1024).toFixed(2)} MB)`);
+              console.log(`   ${materialName}/${pdfFile} (${(pdfStat.size / 1024 / 1024).toFixed(2)} MB)`);
             }
           }
         }
@@ -272,7 +272,7 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
     }
     
     console.log('\n' + '═'.repeat(50));
-    console.log('📊 Zusammenfassung:');
+    console.log('Zusammenfassung:');
     console.log(`   Module: ${stats.modules}`);
     console.log(`   Lernhefte: ${stats.materials}`);
     console.log(`   PDFs: ${stats.pdfs}`);
@@ -285,14 +285,14 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
     );
 
     if (expectedModules.length > 0) {
-      console.log('\n🔍 Vollständigkeit (erwartete Studienhefte):');
+      console.log('\nVollständigkeit (erwartete Studienhefte):');
       let missingTotal = 0;
 
       for (const [moduleName, expected] of expectedModules) {
         const modulePath = path.join(downloadDir, moduleName);
 
         if (!await fs.pathExists(modulePath)) {
-          console.log(`  ⚠️ ${moduleName}: Modul-Ordner fehlt (erwartet: ${expected.titles.length} Studienhefte)`);
+          console.log(`  ${moduleName}: Modul-Ordner fehlt (erwartet: ${expected.titles.length} Studienhefte)`);
           missingTotal += expected.titles.length;
           continue;
         }
@@ -316,24 +316,24 @@ export async function verifyDownloads(downloadDir, expectedByModule = {}) {
 
         if (missing.length > 0) {
           missingTotal += missing.length;
-          console.log(`  ⚠️ ${moduleName}: ${missing.length} von ${expected.titles.length} Studienheften fehlen:`);
+          console.log(`  ${moduleName}: ${missing.length} von ${expected.titles.length} Studienheften fehlen:`);
           for (const title of missing) {
             console.log(`       - ${title}`);
           }
         } else {
-          console.log(`  ✓ ${moduleName}: alle ${expected.titles.length} Studienhefte heruntergeladen`);
+          console.log(`  ${moduleName}: alle ${expected.titles.length} Studienhefte heruntergeladen`);
         }
       }
 
       if (missingTotal === 0) {
-        console.log('\n✅ Alle Studienhefte wurden vollständig heruntergeladen.');
+        console.log('\nAlle Studienhefte wurden vollständig heruntergeladen.');
       } else {
-        console.log(`\n⚠️ ${missingTotal} Studienheft(e) fehlen.`);
+        console.log(`\n${missingTotal} Studienheft(e) fehlen.`);
       }
     }
     
   } catch (error) {
-    console.error('❌ Fehler beim Überprüfen der Downloads:', error.message);
+    console.error('Fehler beim Überprüfen der Downloads:', error.message);
   }
 }
 

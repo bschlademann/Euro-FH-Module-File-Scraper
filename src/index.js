@@ -3,11 +3,14 @@ import fs from 'fs-extra';
 import path from 'path';
 import dotenv from 'dotenv';
 import readline from 'readline';
+import { fileURLToPath } from 'url';
 import { login, logout, isLoggedIn } from './auth.js';
 import { getModules, getLearningMaterials, collectHeftIds } from './scraper.js';
 import { downloadAllMaterials, downloadPdf, verifyDownloads, findMissingMaterials } from './downloader.js';
 
 dotenv.config();
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Sanitiert Dateinamen (entfernt ungültige Zeichen)
@@ -42,24 +45,32 @@ function getInput(prompt) {
  * Prüfe ob Dateien bereits im Download-Verzeichnis existieren
  * @param {Array} modules - Array von Modulen mit ihren Materialien
  * @param {string} downloadDir - Basis-Download Verzeichnis
- * @returns {Promise<number>} Anzahl der existierenden Dateien
+ * @returns {Promise<{pdfCount: number, totalFiles: number, moduleDirs: number}>} Gefundene Dateien
  */
 async function checkExistingFiles(modules, downloadDir) {
-  let count = 0;
-  
+  let pdfCount = 0;
+  let totalFiles = 0;
+  let moduleDirs = 0;
+
   for (const module of modules) {
     const moduleNameWithCode = module.code ? `${module.code} - ${module.title}` : module.title;
     const moduleName = sanitizeFilename(moduleNameWithCode);
     const moduleDir = path.join(downloadDir, moduleName);
-    
+
     // Prüfe ob Modul-Verzeichnis existiert
     if (await fs.pathExists(moduleDir)) {
-      const files = await fs.readdir(moduleDir);
-      count += files.filter(f => f.endsWith('.pdf')).length;
+      moduleDirs++;
+      // Rekursiv zählen: die PDFs liegen in den Heft-Ordnern, nicht direkt im Modulordner
+      const entries = await fs.readdir(moduleDir, { recursive: true, withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        totalFiles++;
+        if (entry.name.toLowerCase().endsWith('.pdf')) pdfCount++;
+      }
     }
   }
-  
-  return count;
+
+  return { pdfCount, totalFiles, moduleDirs };
 }
 
 /**
@@ -76,7 +87,7 @@ async function main() {
     console.log('╚═══════════════════════════════════╝\n');
 
     // Browser starten
-    console.log('🚀 Starte Browser...');
+    console.log('Starte Browser...');
     browser = await puppeteer.launch({
       headless: process.env.HEADLESS !== 'false',
       args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -94,34 +105,35 @@ async function main() {
     const modules = await getModules(page);
     
     if (modules.length === 0) {
-      console.log('⚠️ Keine Module gefunden!');
+      console.log('Keine Module gefunden!');
       return;
     }
 
     // Zeige Module an
-    console.log('\n📚 Verfügbare Module:\n');
+    console.log('\nVerfügbare Module:\n');
     modules.forEach((mod, index) => {
       console.log(`  ${index + 1}. ${mod.title} ${mod.code ? `(${mod.code})` : ''}`);
     });
 
     // Stelle sicher dass Verzeichnis existiert
-    const downloadDir = process.env.DOWNLOAD_DIR || './euro-fh-module-scraper-downloads';
+    const downloadDir = path.join(projectRoot, 'euro-fh-module-scraper-downloads');
     await fs.ensureDir(downloadDir);
 
     // Prüfe ob bereits Dateien existieren
-    const existingCount = await checkExistingFiles(modules, downloadDir);
-    
+    const existing = await checkExistingFiles(modules, downloadDir);
+
     // Frage IMMER nach dem Modus
     let duplicateHandling = 'overwrite'; // default
-    console.log(`\n⚙️ Download-Modus:`);
-    
-    if (existingCount > 0) {
-      console.log(`⚠️ ${existingCount} Datei(en) existieren bereits im Download-Verzeichnis.`);
+    console.log('\nDownload-Modus:');
+
+    if (existing.pdfCount > 0) {
+      console.log(`${existing.pdfCount} PDF(s) in ${existing.moduleDirs} Modulordner(n) gefunden ` +
+        `(inkl. Korrekturhinweisen; ${existing.totalFiles} Dateien insgesamt).`);
     }
-    
+
     let validChoice = false;
     while (!validChoice) {
-      const modePrompt = existingCount > 0 
+      const modePrompt = existing.pdfCount > 0 
         ? 'Was möchtest du tun?\n  1. Überschreiben\n  2. Überspringen\nWahl (1 oder 2): '
         : 'Wie sollen existierende Dateien behandelt werden?\n  1. Überschreiben (wenn später vorhanden)\n  2. Überspringen (wenn später vorhanden)\nWahl (1 oder 2): ';
       
@@ -129,19 +141,19 @@ async function main() {
       
       if (modeChoice.trim() === '1') {
         duplicateHandling = 'overwrite';
-        console.log('📝 Modus: Dateien werden überschrieben\n');
+        console.log('Modus: Dateien werden überschrieben\n');
         validChoice = true;
       } else if (modeChoice.trim() === '2') {
         duplicateHandling = 'skip';
-        console.log('📝 Modus: Existierende Dateien werden übersprungen\n');
+        console.log('Modus: Existierende Dateien werden übersprungen\n');
         validChoice = true;
       } else {
-        console.log('❌ Ungültige Eingabe. Bitte 1 oder 2 eingeben.\n');
+        console.log('Ungültige Eingabe. Bitte 1 oder 2 eingeben.\n');
       }
     }
 
     // Lade alle Materialien herunter
-    console.log('⏳ Dies kann einige Zeit dauern...\n');
+    console.log('Dies kann einige Zeit dauern...\n');
 
     // Erwartete Studienhefte pro Modul (für den Abgleich nach dem Download)
     const expectedByModule = {};
@@ -153,7 +165,7 @@ async function main() {
       const moduleName = sanitizeFilename(moduleNameWithCode);
       const moduleDir = path.join(downloadDir, moduleName);
       
-      console.log(`\n📂 Modul: ${moduleName}`);
+      console.log(`\nModul: ${moduleName}`);
       
       try {
         // Pre-Scan: Hefte aus dem DOM lesen (schnell, öffnet das Modul NICHT)
@@ -178,7 +190,7 @@ async function main() {
           );
 
           if (skipIds.size > 0 && skipIds.size === collected.ids.length) {
-            console.log(`  ✓ Modul vollständig, überspringe (${collected.ids.length} Lernhefte vorhanden)`);
+            console.log(`  Modul vollständig, überspringe (${collected.ids.length} Lernhefte vorhanden)`);
             continue;
           }
         }
@@ -191,7 +203,7 @@ async function main() {
           materialName = materialName.replace(/\s*Studienheft\s*/gi, '').trim();
           const materialDir = path.join(moduleDir, materialName);
           
-          console.log(`  📄 Lernheft: ${materialName}`);
+          console.log(`  Lernheft: ${materialName}`);
           if (material._debug) {
             console.log(`     ${material._debug}`);
           }
@@ -227,7 +239,7 @@ async function main() {
           }
         }
       } catch (error) {
-        console.error(`  ❌ Fehler bei Modul ${moduleName}:`, error.message);
+        console.error(`  Fehler bei Modul ${moduleName}:`, error.message);
       }
     }
 
@@ -235,7 +247,7 @@ async function main() {
     await verifyDownloads(downloadDir, expectedByModule);
     
   } catch (error) {
-    console.error('\n❌ FEHLER:', error.message);
+    console.error('\nFEHLER:', error.message);
     console.error('\nLösungsvorschläge:');
     console.error('1. Überprüfe deine Credentials in der .env Datei');
     console.error('2. Stelle sicher dass dein Account Zugriff auf die Materialien hat');
@@ -247,7 +259,7 @@ async function main() {
       try {
         await logout(page);
       } catch (error) {
-        console.warn('⚠️ Logout konnte nicht durchgeführt werden');
+        console.warn('Logout konnte nicht durchgeführt werden');
       }
     }
     
