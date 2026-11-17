@@ -1,6 +1,6 @@
 {
   "name": "euro-fh-scraper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automatischer Scraper für Euro-FH Lernmaterialien",
   "main": "src/index.js",
   "type": "module",

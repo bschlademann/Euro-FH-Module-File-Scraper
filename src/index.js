@@ -64,10 +64,13 @@ async function main() {
   let page;
 
   try {
-    console.log('╔═══════════════════════════════════╗');
-    console.log('║  Euro-FH Scraper v1.0.0           ║');
-    console.log('║  Automatisches Download-Tool      ║');
-    console.log('╚═══════════════════════════════════╝\n');
+    const { version } = await fs.readJson(path.join(projectRoot, 'package.json'));
+    const bannerLine = (text) => `║${text.padEnd(35)}║`;
+
+    console.log(`╔${'═'.repeat(35)}╗`);
+    console.log(bannerLine(`  Euro-FH Scraper v${version}`));
+    console.log(bannerLine('  Automatisches Download-Tool'));
+    console.log(`╚${'═'.repeat(35)}╝\n`);
 
     // Browser starten
     console.log('Starte Browser...');
